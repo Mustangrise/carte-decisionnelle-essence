@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Carte décisionnelle – Essence</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.9.1/dist/proj4.js"></script>
+
+<style>
+body { margin:0; font-family: sans-serif; }
+#topbar { padding:10px; background:#222; color:#fff; }
+#controls { margin-top:8px; }
+#map { height: 90vh; }
+button { padding:8px 12px; margin-left:5px; font-size:16px; }
+#status { margin-top:5px; font-size:14px; opacity:0.8; }
+</style>
+</head>
+<body>
+<div id="topbar">
+<b>Carte décisionnelle – essence</b>
+<div id="controls">
+<input type="file" id="fileInput" accept=".xlsx" />
+<button onclick="generate()">Générer la carte</button>
+<div id="status"></div>
+</div>
+</div>
+<div id="map"></div>
+
+<script>
+let map = L.map('map').setView([46.5,-71.2],6);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+let layerGroup = L.layerGroup().addTo(map);
+
+const stJerome = turf.point([-74.003,45.775]);
+const laPlaine = turf.point([-73.748,45.767]);
+const steSophie = turf.point([-74.099,45.829]);
+
+function status(msg){ document.getElementById('status').innerText = msg; }
+
+function generate(){
+  const file = document.getElementById('fileInput').files[0];
+  if(!file){ alert('Choisir un fichier Excel'); return; }
+  status('Lecture du fichier…'); layerGroup.clearLayers();
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb = XLSX.read(e.target.result,{type:'array'});
+    const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    processData(data);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function processData(data){
+  status('Traitement des données…');
+  let pts = [];
+  data.forEach(r=>{
+    if(!r.Latitude||!r.Longitude||!r['Prix Régulier']) return;
+    let p = parseFloat(String(r['Prix Régulier']).replace(/[^0-9.]/g,''));
+    if(isNaN(p)) return;
+    if(String(r.Bannière||'').toLowerCase().includes('costco')) p+=5;
+    pts.push({...r, prix:p});
+  });
+
+  const zone = turf.union(
+    turf.buffer(stJerome,15,{units:'kilometers'}),
+    turf.buffer(laPlaine,10,{units:'kilometers'})
+  );
+
+  pts.forEach(p=> p.inZone = turf.booleanPointInPolygon(turf.point([p.Longitude,p.Latitude]), zone));
+  const zin = pts.filter(p=>p.inZone);
+  const minZ = Math.min(...zin.map(p=>p.prix));
+  const maxZ = Math.max(...zin.map(p=>p.prix));
+  const prixMin = Math.min(...pts.map(p=>p.prix));
+  const prixMax = Math.max(...pts.map(p=>p.prix));
+
+  pts.forEach(p=>{
+    let z = Math.round((prixMax-p.prix)/(prixMax-prixMin)*10000);
+    let color='black';
+    if(Math.abs(p.prix-minZ)<=0.1) color='purple';
+    else if(p.prix<minZ) color='blue';
+    else if(p.prix>maxZ) color='black';
+    else{
+      let t=(p.prix-minZ)/(maxZ-minZ);
+      color=`rgb(${200+55*t},${200-150*t},0)`;
+    }
+
+    if(p.inZone){
+      L.circleMarker([p.Latitude,p.Longitude],{
+        radius:5,fillOpacity:0.9,stroke:false,fillColor:color,zIndexOffset:z
+      }).bindPopup(`${p.Nom||''}<br>Prix ajusté: ${p.prix.toFixed(1)}¢`).addTo(layerGroup);
+    }else{
+      L.marker([p.Latitude,p.Longitude],{
+        zIndexOffset:z,
+        icon:L.divIcon({html:`<div style="width:12px;height:12px;background:${color}"></div>`})
+      }).bindPopup(`${p.Nom||''}<br>Prix ajusté: ${p.prix.toFixed(1)}¢`).addTo(layerGroup);
+    }
+  });
+  status('Carte générée');
+}
+</script>
+</body>
+</html>
