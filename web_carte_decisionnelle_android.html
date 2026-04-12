@@ -22,12 +22,27 @@ button { padding:8px 12px; margin-left:5px; font-size:16px; }
 </head>
 <body>
 <div id="topbar">
-<b>Carte décisionnelle – essence</b>
-<div id="controls">
-<input type="file" id="fileInput" accept=".xlsx" />
-<button onclick="generate()">Générer la carte</button>
-<div id="status"></div>
-</div>
+  <b>Carte décisionnelle – essence</b>
+
+  <div id="controls" style="margin-top:8px; line-height:1.6">
+
+    <a
+      href="https://regieessencequebec.ca/data/"
+      target="_blank"
+      rel="noopener noreferrer"
+      style="color:#9fd3ff; text-decoration:underline; font-size:14px;"
+    >
+      📥 Télécharger les données officielles (Régie Essence Québec)
+    </a>
+
+    <br/>
+
+    <input type="file" id="fileInput" accept=".xlsx" />
+
+    <button onclick="generate()">Générer la carte</button>
+
+    <div id="status"></div>
+  </div>
 </div>
 <div id="map"></div>
 
