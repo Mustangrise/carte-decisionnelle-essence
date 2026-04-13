@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Carte décisionnelle – Essence</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+<style>
+body { margin:0; font-family:sans-serif; }
+#topbar { padding:10px; background:#222; color:#fff; }
+#controls { margin-top:8px; line-height:1.6; }
+#map { height:90vh; position:relative; }
+#status { margin-top:6px; font-size:14px; opacity:0.85; }
+a { color:#9fd3ff; text-decoration:underline; font-size:14px; }
+input { margin-top:6px; }
+
+/* ===== Cercle de zone dynamique ===== */
+#zone-overlay {
+  position:absolute;
+  top:50%;
+  left:50%;
+  width:70vmin;
+  height:70vmin;
+  border:2px solid rgba(0,0,0,0.6);
+  border-radius:50%;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+  z-index:500;
+}
+</style>
+</head>
+
+<body>
+<div id="topbar">
+  <b>Carte décisionnelle – essence</b>
+
+  <div id="controls">
+    <a href="https://regieessencequebec.ca/data/" target="_blank" rel="noopener noreferrer">
+      📥 Télécharger les données officielles (Régie Essence Québec)
+    </a><br>
+
+    <input type="file" id="fileInput" accept=".xlsx"><br>
+    <button onclick="applyZone()">ICI</button>
+
+    <div id="status"></div>
+  </div>
+</div>
+
+<div id="map">
+  <div id="zone-overlay"></div>
+</div>
+
+<script>
+/* ======================= Carte ======================= */
+let map = L.map('map').setView([46.5,-71.2],6);
+L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+).addTo(map);
+let layerGroup = L.layerGroup().addTo(map);
+
+function status(msg){ document.getElementById('status').innerText = msg; }
+
+/* ======================= Excel ======================= */
+let excelData = null;
+document.getElementById("fileInput").addEventListener("change", e=>{
+  const file = e.target.files[0];
+  if (!file) return;
+
+  status("Lecture du fichier…");
+  const reader = new FileReader();
+  reader.onload = ev=>{
+    const wb = XLSX.read(ev.target.result,{type:'array'});
+    excelData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    status("Fichier chargé – ajuster la zone puis cliquer ICI");
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+/* ======================= Bouton ICI ======================= */
+function applyZone(){
+  if (!excelData) {
+    alert("Choisir un fichier Excel");
+    return;
+  }
+  processData(excelData);
+}
+
+/* ======================= Traitement ======================= */
+function processData(data){
+  status("Traitement des données…");
+  layerGroup.clearLayers();
+
+  /* ===== Définition dynamique de la zone ===== */
+  const center = map.getCenter();
+  const mapSize = map.getSize();
+  const pxRadius = mapSize.x * 0.35;
+
+  const p1 = map.containerPointToLatLng([mapSize.x/2, mapSize.y/2]);
+  const p2 = map.containerPointToLatLng([mapSize.x/2 + pxRadius, mapSize.y/2]);
+
+  const radiusKm = turf.distance(
+    turf.point([p1.lng,p1.lat]),
+    turf.point([p2.lng,p2.lat]),
+    {units:'kilometers'}
+  );
+
+  const zone = turf.buffer(
+    turf.point([center.lng, center.lat]),
+    radiusKm,
+    {units:'kilometers'}
+  );
+
+  /* ===== Nettoyage des données ===== */
+  let pts=[];
+  data.forEach(r=>{
+    if (!r.Latitude || !r.Longitude || !r['Prix Régulier']) return;
+
+    let prix=parseFloat(String(r['Prix Régulier']).replace(/[^0-9.]/g,''));
+    if (isNaN(prix)) return;
+    if (String(r.Bannière||'').toLowerCase().includes('costco')) prix+=5;
+
+    pts.push({...r, prix});
+  });
+
+  pts.forEach(p=>{
+    p.inZone = turf.booleanPointInPolygon(
+      turf.point([p.Longitude,p.Latitude]),
+      zone
+    );
+  });
+
+  const zin=pts.filter(p=>p.inZone);
+  if (!zin.length){ status("Aucune station dans la zone."); return; }
+
+  const minZ=Math.min(...zin.map(p=>p.prix));
+  const maxZ=Math.max(...zin.map(p=>p.prix));
+  const prixMin=Math.min(...pts.map(p=>p.prix));
+  const prixMax=Math.max(...pts.map(p=>p.prix));
+
+  /* ===== Économie ===== */
+  function eco(p){
+    const d=turf.distance(
+      turf.point([p.Longitude,p.Latitude]),
+      turf.point([center.lng,center.lat]),
+      {units:'kilometers'}
+    );
+    if (d<=0) return 0;
+    return (30*(minZ-p.prix)/100)/(d/100);
+  }
+
+  function blue(t){
+    const a=[173,216,230],b=[0,0,139];
+    return `rgb(${a[0]+t*(b[0]-a[0])},${a[1]+t*(b[1]-a[1])},${a[2]+t*(b[2]-a[2])})`;
+  }
+
+  function rz(t){
+    const s=[[0,128,0],[255,255,0],[255,165,0],[255,0,0]];
+    const i=Math.min(Math.floor(t*3),2),lt=t*3-i;
+    return `rgb(${s[i][0]+lt*(s[i+1][0]-s[i][0])},
+                ${s[i][1]+lt*(s[i+1][1]-s[i][1])},
+                ${s[i][2]+lt*(s[i+1][2]-s[i][2])})`;
+  }
+
+  const blues=zin.filter(p=>p.prix<minZ).map(eco);
+  const minB=Math.min(...blues), maxB=Math.max(...blues);
+
+  /* ===== Affichage ===== */
+  pts.forEach(p=>{
+    let color;
+    if (Math.abs(p.prix-minZ)<=0.1) color='purple';
+    else if (p.prix<minZ) color=blue((eco(p)-minB)/(maxB-minB||1));
+    else if (p.prix>maxZ) color='black';
+    else color=rz((p.prix-minZ)/(maxZ-minZ));
+
+    const z=Math.round((prixMax-p.prix)/(prixMax-prixMin)*10000);
+
+    if (p.inZone)
+      L.circleMarker([p.Latitude,p.Longitude],
+        {radius:8,fillOpacity:0.9,stroke:false,fillColor:color,zIndexOffset:z})
+      .bindPopup(`${p.Nom||''}<br>${p.prix.toFixed(1)}¢`)
+      .addTo(layerGroup);
+    else
+      L.marker([p.Latitude,p.Longitude],
+        {zIndexOffset:z,
+         icon:L.divIcon({html:`<div style="width:12px;height:12px;background:${color}"></div>`})})
+      .bindPopup(`${p.Nom||''}<br>${p.prix.toFixed(1)}¢`)
+      .addTo(layerGroup);
+  });
+
+  status("Carte générée");
+
+  /* UX finale */
+  document.getElementById("topbar").style.display="none";
+  document.getElementById("map").style.height="100vh";
+  map.invalidateSize();
+}
+</script>
+</body>
+</html>
