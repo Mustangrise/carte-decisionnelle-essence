@@ -225,6 +225,18 @@ document.getElementById("topbar").style.display = "none";
 // Donner toute la hauteur à la carte
 document.getElementById("map").style.height = "100vh";
 map.invalidateSize();
+  // === Zoom automatique sur le secteur de La Plaine ===
+const zoneLaPlaine = turf.buffer(
+  laPlaine,
+  40,                // rayon en km (ajustable)
+  { units: "kilometers" }
+);
+
+const bounds = L.geoJSON(zoneLaPlaine).getBounds();
+map.fitBounds(bounds, {
+  padding: [20, 20],
+  maxZoom: 13       // limite pour éviter trop de zoom
+});
 }
 </script>
 </body>
