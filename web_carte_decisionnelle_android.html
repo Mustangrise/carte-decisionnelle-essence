@@ -27,7 +27,7 @@ input[type=file] { margin-top:6px; }
 
   <div id="controls">
 
-    <a href="https://regieessencequebec.ca/data/"
+    <a href="https://regieessencequebec.ca/"
        target="_blank"
        rel="noopener noreferrer">
       📥 Télécharger les données officielles (Régie Essence Québec)
@@ -59,7 +59,7 @@ let layerGroup = L.layerGroup().addTo(map);
 
 /* ======================= Références ======================= */
 const stJerome  = turf.point([-74.003,45.775]);
-const laPlaine  = turf.point([-73.748,45.767]);
+const laPlaine  = turf.point([-74.000,45.767]);
 const steSophie = turf.point([-74.099,45.829]);
 
 function status(msg){
@@ -228,7 +228,7 @@ map.invalidateSize();
   // === Zoom automatique sur le secteur de La Plaine ===
 const zoneLaPlaine = turf.buffer(
   laPlaine,
-  40,                // rayon en km (ajustable)
+  30,                // rayon en km (ajustable)
   { units: "kilometers" }
 );
 
