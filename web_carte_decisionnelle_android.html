@@ -199,7 +199,7 @@ function processData(data){
     if (p.inZone){
       L.circleMarker(
         [p.Latitude,p.Longitude],
-        {radius:5,fillOpacity:0.9,stroke:false,
+        {radius:7,fillOpacity:0.9,stroke:false,
          fillColor:color,zIndexOffset:z}
       ).bindPopup(
         `${p.Nom||''}<br>Prix ajusté : ${p.prix.toFixed(1)}¢`
@@ -218,6 +218,13 @@ function processData(data){
   });
 
   status("Carte générée");
+
+// Masquer le bandeau après génération
+document.getElementById("topbar").style.display = "none";
+
+// Donner toute la hauteur à la carte
+document.getElementById("map").style.height = "100vh";
+map.invalidateSize();
 }
 </script>
 </body>
